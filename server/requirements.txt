@@ -1,0 +1,2 @@
+# Server pure Python stdlib use karta hai - koi external package nahi chahiye.
+# Render par file zaroori hai (build detect ke liye), isliye khali rakha hai.
