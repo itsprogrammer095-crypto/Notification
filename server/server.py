@@ -193,7 +193,7 @@ def fetch_status():
     return out
 
 
-DASHBOARD = """<!DOCTYPE html>
+DASHBOARD = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
