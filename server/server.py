@@ -17,6 +17,7 @@ API:
   POST /api/ping            -> {"device": ...} device ko ping, pong ka wait karta hai
   POST /api/pong            -> device ka ping-response
   POST /api/clear           -> wipe stored data
+  POST /api/clear_notifs    -> delete stored notifications (optional {"device": id})
 """
 import json
 import os
@@ -234,6 +235,9 @@ DASHBOARD = """<!DOCTYPE html>
   @keyframes pulse { 0%,100% {opacity:1} 50% {opacity:.4} }
   button.danger { background: #7f1d1d; color: #fca5a5; border: none; padding: 8px 16px;
                   border-radius: 6px; cursor: pointer; font-size: 13px; }
+  button.warn { background: #92400e; color: #fde68a; border: none; padding: 8px 16px;
+                border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
+  button.warn:hover { background: #b45309; }
   select { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; padding: 8px 12px;
            border-radius: 6px; font-size: 13px; cursor: pointer; }
   button.primary { background: #0284c7; color: #e0f2fe; border: none; padding: 8px 18px;
@@ -276,6 +280,7 @@ DASHBOARD = """<!DOCTYPE html>
     <button class="ping" id="pingBtn" onclick="pingDevice()">Ping Device</button>
     <button class="primary" id="syncBtn" onclick="syncCalls()">Sync Calls</button>
     <span id="getStatus"></span>
+    <button class="warn" onclick="clearNotifs()">Delete Notifications</button>
     <button class="danger" onclick="clearData()">Clear Data</button>
   </div>
   <div id="panelN" class="cards"></div>
@@ -525,6 +530,22 @@ async function syncCalls() {
   } catch (e) { el.textContent = 'Failed to send command'; }
 }
 
+async function clearNotifs() {
+  if (!confirm('Delete ALL stored notifications? Sirf notifications delete hongi, calls history safe rahegi.\nPhones par bhi purani notifications clear ho jayengi.')) return;
+  const el = document.getElementById('getStatus');
+  try {
+    const dev = document.getElementById('deviceSel').value;
+    await fetch('/api/clear_notifs', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(dev ? {device: dev} : {})});
+    await fetch('/api/command', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({device: dev || 'all', cmd: 'clear_notifs'})});
+    el.textContent = 'Notifications deleted (server + phones)';
+    setTimeout(() => { if (el.textContent.startsWith('Notifications deleted')) el.textContent = ''; }, 8000);
+  } catch (e) { el.textContent = 'Delete failed'; }
+  lastNotifId = 0; fullCalls = null; fullNotifs = null;
+  refresh(true);
+}
+
 async function clearData() {
   if (!confirm('Clear all stored data?')) return;
   await fetch('/api/clear', {method:'POST'});
@@ -722,6 +743,16 @@ class Handler(BaseHTTPRequestHandler):
                 safe_print(f"[+] PING FAIL dev={dev} - no response in {PING_TIMEOUT}s")
                 self._json({"status": "offline", "device": dev,
                             "error": f"no response in {PING_TIMEOUT}s"})
+        elif path == "/api/clear_notifs":
+            dev = (data or {}).get("device")
+            with _lock, db() as conn:
+                if dev:
+                    cur = conn.execute("DELETE FROM notifications WHERE device_id=?", (dev,))
+                else:
+                    cur = conn.execute("DELETE FROM notifications")
+            n = cur.rowcount if cur else 0
+            safe_print(f"[+] CLEAR-NOTIFS dev={dev or 'all'} deleted={n}")
+            self._json({"ok": True, "deleted": n})
         elif path == "/api/clear":
             with _lock, db() as conn:
                 conn.execute("DELETE FROM notifications")
